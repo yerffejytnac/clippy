@@ -3,6 +3,7 @@
  * More robust and feature-rich with security and enhancements
  */
 
+import type { Element, Root } from "hast";
 import type { Code } from "mdast";
 import rehypeParse from "rehype-parse";
 import rehypeRaw from "rehype-raw";
@@ -10,7 +11,51 @@ import rehypeRemark from "rehype-remark";
 import remarkGfm from "remark-gfm";
 import remarkStringify from "remark-stringify";
 import { unified } from "unified";
-import { visit } from "unist-util-visit";
+import { SKIP, visit } from "unist-util-visit";
+
+/**
+ * Rehype plugin to clean up code elements before conversion
+ * - Removes elements with data-md="skip"
+ * - Merges adjacent inline code elements
+ */
+function rehypeCleanCode() {
+  return (tree: Root) => {
+    // Remove elements with data-md="skip"
+    visit(tree, "element", (node: Element, index, parent) => {
+      if (node.tagName === "code" && node.properties?.dataMd === "skip") {
+        if (parent && typeof index === "number") {
+          parent.children.splice(index, 1);
+          return [SKIP, index];
+        }
+      }
+    });
+
+    // Merge adjacent inline code elements
+    visit(tree, "element", (node: Element) => {
+      if (node.tagName === "pre") return; // Skip pre blocks
+
+      const children = node.children;
+      for (let i = 0; i < children.length - 1; i++) {
+        const current = children[i];
+        const next = children[i + 1];
+
+        // Check if both are code elements
+        if (
+          current.type === "element" &&
+          current.tagName === "code" &&
+          next.type === "element" &&
+          next.tagName === "code"
+        ) {
+          // Merge text content from next into current
+          current.children.push(...next.children);
+          // Remove next element
+          children.splice(i + 1, 1);
+          i--; // Re-check current position in case of multiple adjacent codes
+        }
+      }
+    });
+  };
+}
 
 /**
  * Remark plugin to infer code block language from content
@@ -100,6 +145,7 @@ export async function htmlToMarkdown(html: string): Promise<string> {
     const processor = unified()
       .use(rehypeParse, { fragment: true }) // Parse HTML fragment
       .use(rehypeRaw) // Parse raw HTML nodes (handles malformed HTML better)
+      .use(rehypeCleanCode) // Clean up code elements (remove skip, merge adjacent)
       .use(rehypeRemark) // Convert HTML (hast) to markdown (mdast)
       .use(remarkInferCodeLanguage) // Infer language for code blocks
       .use(remarkGfm) // Support GitHub Flavored Markdown (tables, task lists, etc)

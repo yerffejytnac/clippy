@@ -116,6 +116,27 @@ export class Extractor {
    * This prevents syntax highlighting spans from being mangled by Readability
    */
   private preserveCodeBlocks($: cheerio.CheerioAPI): void {
+    // Remove code elements that should be skipped
+    $('code[data-md="skip"]').remove();
+
+    // Merge adjacent inline code elements (common in documentation)
+    $("code").each((_, elem) => {
+      const $code = $(elem);
+      const parent = $code.parent();
+
+      // Skip if inside a pre block (handled separately)
+      if (parent.is("pre")) return;
+
+      // Merge with next sibling code elements
+      let next = $code.next();
+      while (next.length > 0 && next.is("code")) {
+        $code.append(next.text());
+        const toRemove = next;
+        next = next.next();
+        toRemove.remove();
+      }
+    });
+
     $("pre").each((_, elem) => {
       const $pre = $(elem);
 
