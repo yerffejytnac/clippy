@@ -1,6 +1,6 @@
 /**
  * Content extraction pipeline
- * Uses Readability for main content extraction + node-html-markdown for conversion
+ * Uses Readability for main content extraction + rehype-remark for conversion
  */
 
 import { Readability } from "@mozilla/readability";
@@ -32,11 +32,11 @@ const DEFAULT_OPTIONS: ExtractOptions = {
 };
 
 export class Extractor {
-  extract(
+  async extract(
     html: string,
     url: string,
     options: ExtractOptions = {},
-  ): ExtractResult {
+  ): Promise<ExtractResult> {
     const opts = { ...DEFAULT_OPTIONS, ...options };
     const $ = cheerio.load(html);
 
@@ -69,8 +69,8 @@ export class Extractor {
         article.textContent &&
         article.textContent.length > 100
       ) {
-        // Use node-html-markdown (faster than Turndown)
-        markdown = htmlToMarkdown(article.content);
+        // Use rehype-remark for robust HTML to markdown conversion
+        markdown = await htmlToMarkdown(article.content);
 
         // Use Readability's title if better
         if (article.title && article.title.length > title.length) {
@@ -80,15 +80,15 @@ export class Extractor {
         // Fallback: try to find main content area
         const mainContent = findMainContent($);
         if (mainContent) {
-          markdown = htmlToMarkdown(mainContent);
+          markdown = await htmlToMarkdown(mainContent);
         } else {
           // Last resort: convert body
-          markdown = htmlToMarkdown($("body").html() || cleanedHtml);
+          markdown = await htmlToMarkdown($("body").html() || cleanedHtml);
         }
       }
     } catch {
       // Fallback if Readability fails
-      markdown = htmlToMarkdown($.html());
+      markdown = await htmlToMarkdown($.html());
     }
 
     // Truncate if too long

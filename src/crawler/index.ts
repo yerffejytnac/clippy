@@ -2,14 +2,14 @@
  * Web crawler with rate limiting
  */
 
-import PQueue from 'p-queue';
-import { EngineWaterfall, type EngineResult } from '../engine/index.js';
-import { Extractor, type ExtractResult } from '../extractor/index.js';
-import { RobotsParser } from './robots.js';
-import { SitemapParser } from './sitemap.js';
-import { createLogger } from '../utils/logger.js';
-import { normalizeUrl, shouldSkipUrl, getBaseDomain } from '../utils/url.js';
-import { DedupTracker } from '../utils/dedup.js';
+import PQueue from "p-queue";
+import { EngineWaterfall, type EngineResult } from "../engine/index.js";
+import { Extractor, type ExtractResult } from "../extractor/index.js";
+import { RobotsParser } from "./robots.js";
+import { SitemapParser } from "./sitemap.js";
+import { createLogger } from "../utils/logger.js";
+import { normalizeUrl, shouldSkipUrl, getBaseDomain } from "../utils/url.js";
+import { DedupTracker } from "../utils/dedup.js";
 
 export interface CrawlOptions {
   depth: number;
@@ -21,7 +21,7 @@ export interface CrawlOptions {
   useSitemap: boolean;
   includePattern?: RegExp;
   excludePattern?: RegExp;
-  forceEngine?: 'fetch' | 'playwright' | 'rebrowser';
+  forceEngine?: "fetch" | "playwright" | "rebrowser";
 }
 
 export interface CrawlResult {
@@ -33,11 +33,11 @@ export interface CrawlResult {
 }
 
 const DEFAULT_OPTIONS: CrawlOptions = {
-  depth: 2,              // 2 levels deep (fast, good coverage)
-  concurrency: 10,       // 10 concurrent requests
-  maxPages: 150,         // 150 pages max (good coverage, avoids bloat)
-  rateLimit: 10,         // 10 requests/sec
-  timeout: 10000,        // 10s timeout (fail fast)
+  depth: 2, // 2 levels deep (fast, good coverage)
+  concurrency: 10, // 10 concurrent requests
+  maxPages: 150, // 150 pages max (good coverage, avoids bloat)
+  rateLimit: 10, // 10 requests/sec
+  timeout: 10000, // 10s timeout (fail fast)
   respectRobots: true,
   useSitemap: true,
 };
@@ -63,7 +63,7 @@ export class Crawler {
     this.extractor = new Extractor();
     this.robots = new RobotsParser();
     this.sitemap = new SitemapParser();
-    this.dedup = new DedupTracker('en'); // Prefer English content
+    this.dedup = new DedupTracker("en"); // Prefer English content
 
     // Rate-limited queue
     this.queue = new PQueue({
@@ -77,8 +77,8 @@ export class Crawler {
    * Crawl URLs and yield results as they complete
    */
   async *crawl(startUrls: string[]): AsyncGenerator<CrawlResult> {
-    const normalizedUrls = startUrls.map(u => normalizeUrl(u));
-    this.baseHosts = new Set(normalizedUrls.map(u => getBaseDomain(u)));
+    const normalizedUrls = startUrls.map((u) => normalizeUrl(u));
+    this.baseHosts = new Set(normalizedUrls.map((u) => getBaseDomain(u)));
 
     // Add start URLs FIRST (don't wait for sitemap)
     for (const url of normalizedUrls) {
@@ -89,8 +89,10 @@ export class Crawler {
     if (this.options.respectRobots) {
       try {
         await Promise.race([
-          Promise.all(normalizedUrls.map(url => this.robots.parse(url))),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 3000))
+          Promise.all(normalizedUrls.map((url) => this.robots.parse(url))),
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("timeout")), 3000),
+          ),
         ]);
       } catch {
         // Timeout or error - continue without robots
@@ -102,7 +104,9 @@ export class Crawler {
       try {
         await Promise.race([
           this.parseSitemaps(normalizedUrls),
-          new Promise((_, reject) => setTimeout(() => reject(new Error('timeout')), 5000))
+          new Promise((_, reject) =>
+            setTimeout(() => reject(new Error("timeout")), 5000),
+          ),
         ]);
       } catch {
         // Timeout - continue with what we have
@@ -114,7 +118,11 @@ export class Crawler {
     let yieldedCount = 0;
     const idleTimeout = 15000; // 15 seconds without new results = done
 
-    while (this.queue.size > 0 || this.queue.pending > 0 || this.results.length > 0) {
+    while (
+      this.queue.size > 0 ||
+      this.queue.pending > 0 ||
+      this.results.length > 0
+    ) {
       // Yield available results
       while (this.results.length > 0) {
         yield this.results.shift()!;
@@ -133,7 +141,7 @@ export class Crawler {
       }
 
       // Wait a bit for more results
-      await new Promise(r => setTimeout(r, 50));
+      await new Promise((r) => setTimeout(r, 50));
     }
 
     // Final results
@@ -199,7 +207,10 @@ export class Crawler {
         return;
       }
 
-      const extracted = this.extractor.extract(result.html, result.finalUrl);
+      const extracted = await this.extractor.extract(
+        result.html,
+        result.finalUrl,
+      );
 
       // Skip pages with very little content
       if (extracted.wordCount < 20) {
@@ -251,11 +262,14 @@ export class Crawler {
       if (!this.baseHosts.has(domain)) return false;
 
       // Robots.txt
-      if (this.options.respectRobots && !this.robots.isAllowed(url)) return false;
+      if (this.options.respectRobots && !this.robots.isAllowed(url))
+        return false;
 
       // Include/exclude patterns
-      if (this.options.includePattern && !this.options.includePattern.test(url)) return false;
-      if (this.options.excludePattern && this.options.excludePattern.test(url)) return false;
+      if (this.options.includePattern && !this.options.includePattern.test(url))
+        return false;
+      if (this.options.excludePattern && this.options.excludePattern.test(url))
+        return false;
 
       // Smart dedup - skip localized versions
       const dedupResult = this.dedup.shouldSkip(url);
@@ -292,5 +306,5 @@ export class Crawler {
   }
 }
 
-export { RobotsParser } from './robots.js';
-export { SitemapParser } from './sitemap.js';
+export { RobotsParser } from "./robots.js";
+export { SitemapParser } from "./sitemap.js";
