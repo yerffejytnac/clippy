@@ -1,0 +1,39 @@
+# Dependencies
+node_modules/
+
+# Build output
+dist/
+
+# Output directories
+clippy-output/
+*-output/
+
+# Logs
+*.log
+npm-debug.log*
+bun-debug.log*
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# IDE
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Test output
+coverage/
+*.tmp
+
+# Environment
+.env
+.env.local
+
+# Package artifacts
+*.tgz
+
+# Playwright
+playwright-report/
+test-results/
