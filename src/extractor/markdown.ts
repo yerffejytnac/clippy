@@ -1,16 +1,95 @@
 /**
  * HTML to Markdown conversion using unified/rehype/remark ecosystem
- * More robust and feature-rich than node-html-markdown
+ * More robust and feature-rich with security and enhancements
  */
 
+import type { Code } from "mdast";
 import rehypeParse from "rehype-parse";
+import rehypeRaw from "rehype-raw";
 import rehypeRemark from "rehype-remark";
 import remarkGfm from "remark-gfm";
 import remarkStringify from "remark-stringify";
 import { unified } from "unified";
+import { visit } from "unist-util-visit";
 
 /**
- * Convert HTML to Markdown using rehype-remark
+ * Remark plugin to infer code block language from content
+ */
+function remarkInferCodeLanguage() {
+  return (tree: any) => {
+    visit(tree, "code", (node: Code) => {
+      // Only infer if no language specified
+      if (!node.lang && node.value) {
+        node.lang = inferLanguageFromCode(node.value);
+      }
+    });
+  };
+}
+
+/**
+ * Infer programming language from code content
+ */
+function inferLanguageFromCode(code: string): string {
+  // Check for JSX/React
+  if (
+    code.includes("import") &&
+    (code.includes("React") ||
+      (code.includes("<") && code.includes("/>") && code.includes(">")))
+  ) {
+    return "jsx";
+  }
+
+  // Check for TypeScript
+  if (
+    code.includes(": ") &&
+    (code.includes("interface") ||
+      code.includes("type ") ||
+      code.includes("as ") ||
+      code.includes(": string") ||
+      code.includes(": number"))
+  ) {
+    return "typescript";
+  }
+
+  // Check for modern JavaScript
+  if (
+    code.includes("import ") ||
+    code.includes("export ") ||
+    code.includes("=>") ||
+    code.includes("const ") ||
+    code.includes("let ")
+  ) {
+    return "javascript";
+  }
+
+  // Check for JSON
+  if (
+    (code.trim().startsWith("{") || code.trim().startsWith("[")) &&
+    (code.includes(":") || code.includes(","))
+  ) {
+    try {
+      JSON.parse(code);
+      return "json";
+    } catch {}
+  }
+
+  // Check for shell/bash
+  if (
+    code.includes("#!/bin/") ||
+    code.includes("npm ") ||
+    code.includes("yarn ") ||
+    code.includes("bun ") ||
+    code.includes("$ ")
+  ) {
+    return "bash";
+  }
+
+  // Default to javascript for code with common patterns
+  return "javascript";
+}
+
+/**
+ * Convert HTML to Markdown using rehype-remark with security and enhancements
  */
 export async function htmlToMarkdown(html: string): Promise<string> {
   if (!html || !html.trim()) {
@@ -20,7 +99,9 @@ export async function htmlToMarkdown(html: string): Promise<string> {
   try {
     const processor = unified()
       .use(rehypeParse, { fragment: true }) // Parse HTML fragment
+      .use(rehypeRaw) // Parse raw HTML nodes (handles malformed HTML better)
       .use(rehypeRemark) // Convert HTML (hast) to markdown (mdast)
+      .use(remarkInferCodeLanguage) // Infer language for code blocks
       .use(remarkGfm) // Support GitHub Flavored Markdown (tables, task lists, etc)
       .use(remarkStringify, {
         bullet: "-",
