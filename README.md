@@ -1,19 +1,21 @@
+<div align="center">
+  <img src="./assets/container.svg" alt="clippy" width="256" style="margin-bottom: 2rem;">
+</div>
+
+<br>
+
 # clippy
 
 **Crawl any site. Save as markdown.**
 
 A fast, simple web scraper that saves crawled content as individual markdown files with frontmatter.
 
+**Note:** Not affiliated with that helpful paperclip from your childhood. This one just grabs web pages.
+
 ## Install
 
 ```bash
-bun install -g maw
-```
-
-Or use directly with `npx`:
-
-```bash
-npx clippy https://docs.python.org
+npm install -g clippy
 ```
 
 ## Quick Start
@@ -282,7 +284,6 @@ console.log(`${sitePreview.totalPages} pages available`);
 
 ## Limitations
 
-- **No authentication** — Can't crawl login-protected content
 - **No form submission** — Only GET requests
 - **Basic JavaScript** — Complex SPAs may need `--browser` or `--stealth`
 - **Cloudflare/reCAPTCHA** — Stealth mode helps but isn't perfect
@@ -355,6 +356,6 @@ Contributions welcome! Please open an issue or PR.
 
 ## Credits
 
-- Built with [Playwright](https://playwright.dev/) for browser automation
-- Content extraction via [Mozilla Readability](https://github.com/mozilla/readability)
-- Markdown conversion with [node-html-markdown](https://github.com/crosstype/node-html-markdown)
+- Browser automation via [Playwright](https://playwright.dev/) and [Rebrowser](https://github.com/rebrowser/rebrowser-playwright)
+- Content extraction using [Mozilla Readability](https://github.com/mozilla/readability)
+- Markdown conversion with [rehype-remark](https://github.com/rehypejs/rehype-remark) and [unified](https://unifiedjs.com/)
