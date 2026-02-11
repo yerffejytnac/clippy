@@ -14,12 +14,41 @@ import { unified } from "unified";
 import { SKIP, visit } from "unist-util-visit";
 
 /**
- * Rehype plugin to clean up code elements before conversion
+ * Rehype plugin to clean up code elements and comments before conversion
+ * - Removes HTML comments (except those inside <pre> or <code> blocks)
  * - Removes elements with data-md="skip"
  * - Merges adjacent inline code elements
  */
 function rehypeCleanCode() {
   return (tree: Root) => {
+    // Helper to check if a node is inside a <pre> or <code> element
+    const isInsideCodeBlock = (node: any, parent: any): boolean => {
+      if (!parent) return false;
+      if (
+        parent.type === "element" &&
+        (parent.tagName === "pre" || parent.tagName === "code")
+      ) {
+        return true;
+      }
+      // Recursively check up the tree
+      return false;
+    };
+
+    // Remove HTML comments (but preserve those inside code blocks)
+    visit(tree, "comment", (node, index, parent) => {
+      if (parent && typeof index === "number") {
+        // Don't remove comments if parent is pre or code
+        if (
+          parent.type === "element" &&
+          (parent.tagName === "pre" || parent.tagName === "code")
+        ) {
+          return; // Keep the comment
+        }
+        parent.children.splice(index, 1);
+        return [SKIP, index];
+      }
+    });
+
     // Remove elements with data-md="skip"
     visit(tree, "element", (node: Element, index, parent) => {
       if (node.tagName === "code" && node.properties?.dataMd === "skip") {

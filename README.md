@@ -39,6 +39,7 @@ clippy . -o my-code
 - **Converts to markdown** automatically
 - **Saves individual files** — one `.md` file per page with YAML frontmatter
 - **Handles JavaScript sites** — automatically falls back to browser mode when needed
+- **Supports authentication** — crawl sites that require login using persistent sessions
 - **Respects robots.txt** and rate limits by default
 - **Works with Git repos** — can crawl GitHub repos or local directories
 
@@ -111,6 +112,26 @@ clippy https://spa-site.com --browser
 clippy https://protected-site.com --stealth
 ```
 
+### Authentication
+
+Crawl sites that require login using persistent browser sessions:
+
+```bash
+# Login once (opens browser for manual authentication)
+clippy auth login https://example.com
+
+# Crawl authenticated site (automatically uses saved session)
+clippy https://example.com/private-docs
+
+# Manage sessions
+clippy auth list              # List all stored sessions
+clippy auth logout <url>      # Remove a session
+clippy auth clear             # Clear all sessions
+
+# Disable auth for a specific crawl
+clippy https://example.com --no-auth
+```
+
 ### Preview Before Crawling
 
 ```bash
@@ -134,6 +155,7 @@ clippy preview https://example.com
 | `--sitemap` | Use sitemap.xml for discovery | `true` |
 | `--no-sitemap` | Disable sitemap discovery | - |
 | `--no-robots` | Ignore robots.txt | - |
+| `--no-auth` | Disable automatic auth detection | - |
 | `--browser` | Force browser mode | - |
 | `--stealth` | Force stealth mode | - |
 | `-q, --quiet` | Minimal output | - |

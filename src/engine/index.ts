@@ -3,16 +3,16 @@
  * Tries fast fetch first, escalates to browser only when blocked
  */
 
-import { FetchEngine } from './fetch.js';
-import { PlaywrightEngine, isPlaywrightInstalled } from './playwright.js';
-import { RebrowserEngine } from './rebrowser.js';
-import { isBlocked, needsBrowser, type BlockReason } from './detector.js';
-import { createLogger } from '../utils/logger.js';
+import { createLogger } from "../utils/logger.js";
+import { type BlockReason, isBlocked, needsBrowser } from "./detector.js";
+import { FetchEngine } from "./fetch.js";
+import { isPlaywrightInstalled, PlaywrightEngine } from "./playwright.js";
+import { RebrowserEngine } from "./rebrowser.js";
 
 export interface EngineResult {
   html: string;
   statusCode: number;
-  engine: 'fetch' | 'playwright' | 'rebrowser';
+  engine: "fetch" | "playwright" | "rebrowser";
   blocked: boolean;
   blockReason?: BlockReason;
   finalUrl: string;
@@ -22,7 +22,8 @@ export interface EngineOptions {
   timeout?: number;
   userAgent?: string;
   headers?: Record<string, string>;
-  forceEngine?: 'fetch' | 'playwright' | 'rebrowser';
+  forceEngine?: "fetch" | "playwright" | "rebrowser";
+  authStatePath?: string; // Path to stored auth state for authenticated crawling
 }
 
 export interface EngineStats {
@@ -34,7 +35,7 @@ export interface EngineStats {
 
 const log = createLogger();
 
-type EngineName = 'fetch' | 'playwright' | 'rebrowser';
+type EngineName = "fetch" | "playwright" | "rebrowser";
 
 interface EngineConfig {
   name: EngineName;
@@ -44,14 +45,22 @@ interface EngineConfig {
 
 // Engine priority order
 const ENGINES: EngineConfig[] = [
-  { name: 'fetch', timeout: 5000, create: () => new FetchEngine() },
-  { name: 'playwright', timeout: 15000, create: () => new PlaywrightEngine() },
-  { name: 'rebrowser', timeout: 30000, create: () => new RebrowserEngine() },
+  { name: "fetch", timeout: 5000, create: () => new FetchEngine() },
+  { name: "playwright", timeout: 15000, create: () => new PlaywrightEngine() },
+  { name: "rebrowser", timeout: 30000, create: () => new RebrowserEngine() },
 ];
 
 export class EngineWaterfall {
-  private engines: Map<string, FetchEngine | PlaywrightEngine | RebrowserEngine> = new Map();
-  private stats: EngineStats = { fetch: 0, playwright: 0, rebrowser: 0, blocked: 0 };
+  private engines: Map<
+    string,
+    FetchEngine | PlaywrightEngine | RebrowserEngine
+  > = new Map();
+  private stats: EngineStats = {
+    fetch: 0,
+    playwright: 0,
+    rebrowser: 0,
+    blocked: 0,
+  };
   private browserInstallPromise: Promise<boolean> | null = null;
 
   async fetch(url: string, options: EngineOptions = {}): Promise<EngineResult> {
@@ -92,19 +101,19 @@ export class EngineWaterfall {
   private async fetchWithEngine(
     url: string,
     engineName: EngineName,
-    options: EngineOptions
+    options: EngineOptions,
   ): Promise<EngineResult> {
     // Lazy-load browser engines
-    if (engineName === 'playwright' || engineName === 'rebrowser') {
-      if (!await this.ensureBrowserInstalled()) {
-        throw new Error('Browser not available');
+    if (engineName === "playwright" || engineName === "rebrowser") {
+      if (!(await this.ensureBrowserInstalled())) {
+        throw new Error("Browser not available");
       }
     }
 
     // Get or create engine instance
     let engine = this.engines.get(engineName);
     if (!engine) {
-      const config = ENGINES.find(e => e.name === engineName);
+      const config = ENGINES.find((e) => e.name === engineName);
       if (!config) throw new Error(`Unknown engine: ${engineName}`);
       engine = config.create();
       this.engines.set(engineName, engine);
@@ -140,15 +149,15 @@ export class EngineWaterfall {
   }
 
   private async installBrowser(): Promise<boolean> {
-    log.info('\n  Protected site detected. Installing browser...');
+    log.info("\n  Protected site detected. Installing browser...");
 
     try {
-      const { execSync } = await import('child_process');
-      execSync('npx playwright install chromium', { stdio: 'inherit' });
-      log.success('  Browser installed successfully.\n');
+      const { execSync } = await import("child_process");
+      execSync("npx playwright install chromium", { stdio: "inherit" });
+      log.success("  Browser installed successfully.\n");
       return true;
     } catch (error) {
-      log.error('  Failed to install browser. Some sites may not work.');
+      log.error("  Failed to install browser. Some sites may not work.");
       return false;
     }
   }
@@ -159,7 +168,7 @@ export class EngineWaterfall {
 
   async close(): Promise<void> {
     for (const engine of this.engines.values()) {
-      if ('close' in engine && typeof engine.close === 'function') {
+      if ("close" in engine && typeof engine.close === "function") {
         await engine.close();
       }
     }
@@ -167,5 +176,5 @@ export class EngineWaterfall {
   }
 }
 
-export { isBlocked, needsBrowser } from './detector.js';
-export type { BlockReason, BlockCheck } from './detector.js';
+export type { BlockCheck, BlockReason } from "./detector.js";
+export { isBlocked, needsBrowser } from "./detector.js";

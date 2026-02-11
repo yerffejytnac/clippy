@@ -3,13 +3,15 @@
  */
 
 import PQueue from "p-queue";
-import { EngineWaterfall, type EngineResult } from "../engine/index.js";
+import { join } from "path";
+import { extractDomain, getAuthDir, hasAuthState } from "../auth/storage.js";
+import { type EngineResult, EngineWaterfall } from "../engine/index.js";
 import { Extractor, type ExtractResult } from "../extractor/index.js";
+import { DedupTracker } from "../utils/dedup.js";
+import { createLogger } from "../utils/logger.js";
+import { getBaseDomain, normalizeUrl, shouldSkipUrl } from "../utils/url.js";
 import { RobotsParser } from "./robots.js";
 import { SitemapParser } from "./sitemap.js";
-import { createLogger } from "../utils/logger.js";
-import { normalizeUrl, shouldSkipUrl, getBaseDomain } from "../utils/url.js";
-import { DedupTracker } from "../utils/dedup.js";
 
 export interface CrawlOptions {
   depth: number;
@@ -22,6 +24,7 @@ export interface CrawlOptions {
   includePattern?: RegExp;
   excludePattern?: RegExp;
   forceEngine?: "fetch" | "playwright" | "rebrowser";
+  useAuth?: boolean; // Auto-detect and use stored auth for domain
 }
 
 export interface CrawlResult {
@@ -192,9 +195,24 @@ export class Crawler {
 
   private async processUrl(url: string, depth: number): Promise<void> {
     try {
+      // Check for stored auth state if enabled
+      let authStatePath: string | undefined;
+      if (this.options.useAuth !== false) {
+        // Default to true if not specified
+        const domain = extractDomain(url);
+        if (hasAuthState(domain)) {
+          authStatePath = join(
+            getAuthDir(),
+            `${domain.replace(/[^a-z0-9.-]/gi, "_")}.json`,
+          );
+          log.dim(`  Using stored auth for ${domain}`);
+        }
+      }
+
       const result = await this.engine.fetch(url, {
         timeout: this.options.timeout,
         forceEngine: this.options.forceEngine,
+        authStatePath,
       });
 
       if (result.blocked) {

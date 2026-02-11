@@ -72,6 +72,15 @@ export class Extractor {
         // Use rehype-remark for robust HTML to markdown conversion
         markdown = await htmlToMarkdown(article.content);
 
+        // Readability often strips reference sections - try to append them back
+        const referencesHtml = this.extractReferences($);
+        if (referencesHtml) {
+          const referencesMd = await htmlToMarkdown(referencesHtml);
+          if (referencesMd.trim()) {
+            markdown += "\n\n" + referencesMd;
+          }
+        }
+
         // Use Readability's title if better
         if (article.title && article.title.length > title.length) {
           // title = article.title; // Uncomment if preferred
@@ -109,6 +118,34 @@ export class Extractor {
       wordCount,
       byteSize: Buffer.byteLength(markdown, "utf8"),
     };
+  }
+
+  /**
+   * Extract references/bibliography section
+   * Readability often strips these, but they contain valuable links
+   */
+  private extractReferences($: cheerio.CheerioAPI): string | null {
+    const selectors = [
+      "#references",
+      ".references",
+      ".references-section",
+      '[class*="reference"]',
+      "#bibliography",
+      ".bibliography",
+      '[id*="references"]',
+    ];
+
+    for (const selector of selectors) {
+      const $section = $(selector).first();
+      if ($section.length) {
+        const html = $section.html();
+        if (html && html.trim().length > 50) {
+          return html;
+        }
+      }
+    }
+
+    return null;
   }
 
   /**

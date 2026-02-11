@@ -4,11 +4,20 @@
  * One command to consume entire websites, git repos, and files into markdown.
  */
 
-import { Crawler, type CrawlOptions, type CrawlResult, SitemapParser } from './crawler/index.js';
-import { ingestToMarkdown, ingestGitToMarkdown, getDirectorySize } from './ingestor/index.js';
-import { createLogger, setLogMode } from './utils/logger.js';
-import { normalizeUrl } from './utils/url.js';
-import { isGitUrl, isLocalGitRepo, readGitRepo } from './git/index.js';
+import {
+  Crawler,
+  type CrawlOptions,
+  type CrawlResult,
+  SitemapParser,
+} from "./crawler/index.js";
+import { isGitUrl, isLocalGitRepo, readGitRepo } from "./git/index.js";
+import {
+  getDirectorySize,
+  ingestGitToMarkdown,
+  ingestToMarkdown,
+} from "./ingestor/index.js";
+import { createLogger, setLogMode } from "./utils/logger.js";
+import { normalizeUrl } from "./utils/url.js";
 
 export interface ClippyOptions {
   output: string;
@@ -21,7 +30,8 @@ export interface ClippyOptions {
   excludePattern?: RegExp;
   useSitemap?: boolean;
   respectRobots?: boolean;
-  forceEngine?: 'fetch' | 'playwright' | 'rebrowser';
+  forceEngine?: "fetch" | "playwright" | "rebrowser";
+  useAuth?: boolean; // Auto-detect and use stored auth (default: true)
   label?: string;
 
   quiet?: boolean;
@@ -63,8 +73,9 @@ function isSpecificPage(url: string): boolean {
     const path = parsed.pathname;
     // It's a specific page if path has content beyond just /
     // Ignore common index patterns like /index.html
-    if (path === '/' || path === '') return false;
-    if (path.match(/^\/(index\.(html?|php|aspx?)|default\.(html?|aspx?))$/i)) return false;
+    if (path === "/" || path === "") return false;
+    if (path.match(/^\/(index\.(html?|php|aspx?)|default\.(html?|aspx?))$/i))
+      return false;
     // Has a meaningful path
     return true;
   } catch {
@@ -82,12 +93,15 @@ function isGitInput(input: string): boolean {
 /**
  * Main clippy function - crawl URLs, git repos, or files and save to markdown files
  */
-export async function clippy(urls: string[], options: ClippyOptions): Promise<ClippyResult> {
+export async function clippy(
+  urls: string[],
+  options: ClippyOptions,
+): Promise<ClippyResult> {
   setLogMode(options.quiet || false, options.verbose || false);
 
   // Check if any input is a git repo
-  const gitInputs = urls.filter(u => isGitInput(u));
-  const webInputs = urls.filter(u => !isGitInput(u));
+  const gitInputs = urls.filter((u) => isGitInput(u));
+  const webInputs = urls.filter((u) => !isGitInput(u));
 
   // If we have git repos, handle them
   if (gitInputs.length > 0) {
@@ -95,15 +109,19 @@ export async function clippy(urls: string[], options: ClippyOptions): Promise<Cl
   }
 
   // Auto-detect single page mode: if ALL urls are specific pages, use single-page mode
-  const allSpecificPages = webInputs.every(u => isSpecificPage(u));
+  const allSpecificPages = webInputs.every((u) => isSpecificPage(u));
   const singlePageMode = allSpecificPages && options.depth === undefined;
 
   // Show mode indicator (CLI shows header, this adds context)
   if (!options.quiet) {
     if (singlePageMode) {
-      log.info(`  Fetching ${webInputs.length} page${webInputs.length > 1 ? 's' : ''}...`);
+      log.info(
+        `  Fetching ${webInputs.length} page${webInputs.length > 1 ? "s" : ""}...`,
+      );
     } else {
-      log.info(`  Crawling (depth ${options.depth ?? 2}, max ${options.maxPages ?? 150} pages)...`);
+      log.info(
+        `  Crawling (depth ${options.depth ?? 2}, max ${options.maxPages ?? 150} pages)...`,
+      );
     }
   }
 
@@ -119,6 +137,7 @@ export async function clippy(urls: string[], options: ClippyOptions): Promise<Cl
     useSitemap: singlePageMode ? false : (options.useSitemap ?? true),
     respectRobots: options.respectRobots ?? true,
     forceEngine: options.forceEngine,
+    useAuth: options.useAuth ?? true, // Default to true - auto-detect stored auth
   });
 
   try {
@@ -147,7 +166,11 @@ export async function clippy(urls: string[], options: ClippyOptions): Promise<Cl
         playwright: engineStats.playwright,
         rebrowser: engineStats.rebrowser,
         blocked: engineStats.blocked,
-        dedup: engineStats.dedup || { localeSkipped: 0, similarSkipped: 0, total: 0 },
+        dedup: engineStats.dedup || {
+          localeSkipped: 0,
+          similarSkipped: 0,
+          total: 0,
+        },
       },
     };
   } finally {
@@ -158,11 +181,14 @@ export async function clippy(urls: string[], options: ClippyOptions): Promise<Cl
 /**
  * Ingest git repos into markdown files
  */
-async function clippyGit(repos: string[], options: ClippyOptions): Promise<ClippyResult> {
+async function clippyGit(
+  repos: string[],
+  options: ClippyOptions,
+): Promise<ClippyResult> {
   const startTime = Date.now();
 
   if (!options.quiet) {
-    log.info(`  Reading ${repos.length} repo${repos.length > 1 ? 's' : ''}...`);
+    log.info(`  Reading ${repos.length} repo${repos.length > 1 ? "s" : ""}...`);
   }
 
   // Read all git repos
@@ -170,7 +196,7 @@ async function clippyGit(repos: string[], options: ClippyOptions): Promise<Clipp
 
   const ingestStats = await ingestGitToMarkdown(allFiles, {
     output: options.output,
-    label: options.label || 'code',
+    label: options.label || "code",
   });
 
   const dirSize = await getDirectorySize(options.output);
@@ -193,8 +219,6 @@ async function clippyGit(repos: string[], options: ClippyOptions): Promise<Clipp
   };
 }
 
-
-
 export interface PreviewResult {
   domain: string;
   totalPages: number;
@@ -206,7 +230,10 @@ export interface PreviewResult {
 /**
  * Preview available pages on a site (sitemap discovery)
  */
-export async function preview(url: string, options: { limit?: number } = {}): Promise<PreviewResult> {
+export async function preview(
+  url: string,
+  options: { limit?: number } = {},
+): Promise<PreviewResult> {
   const normalized = normalizeUrl(url);
   const parsedUrl = new URL(normalized);
   const domain = parsedUrl.hostname;
@@ -223,17 +250,19 @@ export async function preview(url: string, options: { limit?: number } = {}): Pr
   });
 
   const limit = options.limit || 20;
-  const recentPages = sortedPages.slice(0, limit).map(p => ({
+  const recentPages = sortedPages.slice(0, limit).map((p) => ({
     url: p.loc,
     lastmod: p.lastmod,
   }));
 
   // Estimate size (~300KB average per page for news sites, ~100KB for docs)
-  const avgPageSize = domain.includes('cnn') || domain.includes('news') ? 300 : 100;
+  const avgPageSize =
+    domain.includes("cnn") || domain.includes("news") ? 300 : 100;
   const estimatedMB = (pages.length * avgPageSize) / 1024;
-  const estimatedSize = estimatedMB < 50
-    ? `${estimatedMB.toFixed(0)}MB (fits in free tier)`
-    : `${estimatedMB.toFixed(0)}MB (needs API key for full crawl)`;
+  const estimatedSize =
+    estimatedMB < 50
+      ? `${estimatedMB.toFixed(0)}MB (fits in free tier)`
+      : `${estimatedMB.toFixed(0)}MB (needs API key for full crawl)`;
 
   return {
     domain,
@@ -245,10 +274,14 @@ export async function preview(url: string, options: { limit?: number } = {}): Pr
 }
 
 // Export types and utilities
-export type { CrawlOptions, CrawlResult } from './crawler/index.js';
-export type { ExtractResult } from './extractor/index.js';
-export type { EngineResult, EngineOptions, EngineStats } from './engine/index.js';
-export { Crawler } from './crawler/index.js';
-export { Extractor } from './extractor/index.js';
-export { EngineWaterfall } from './engine/index.js';
-export { createLogger, setLogMode } from './utils/logger.js';
+export type { CrawlOptions, CrawlResult } from "./crawler/index.js";
+export { Crawler } from "./crawler/index.js";
+export type {
+  EngineOptions,
+  EngineResult,
+  EngineStats,
+} from "./engine/index.js";
+export { EngineWaterfall } from "./engine/index.js";
+export type { ExtractResult } from "./extractor/index.js";
+export { Extractor } from "./extractor/index.js";
+export { createLogger, setLogMode } from "./utils/logger.js";
