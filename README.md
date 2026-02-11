@@ -298,7 +298,7 @@ bun install
 # Build
 bun run build
 
-# Link locally
+# Link locally (creates symlink in ~/.bun/bin)
 bun link
 
 # Use
@@ -314,9 +314,10 @@ bun install
 # Build
 bun run build
 
-# Link globally
+# Link globally (creates symlink in ~/.bun/bin)
 bun link
-bun link clippy
+
+# Make sure ~/.bun/bin is in your PATH
 
 # Use
 clippy https://example.com

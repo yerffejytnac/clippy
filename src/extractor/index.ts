@@ -3,12 +3,12 @@
  * Uses Readability for main content extraction + node-html-markdown for conversion
  */
 
-import { Readability } from '@mozilla/readability';
-import { JSDOM } from 'jsdom';
-import * as cheerio from 'cheerio';
-import { cleanHtml, findMainContent } from './cleaner.js';
-import { extractLinks } from './links.js';
-import { htmlToMarkdown } from './markdown.js';
+import { Readability } from "@mozilla/readability";
+import * as cheerio from "cheerio";
+import { JSDOM } from "jsdom";
+import { cleanHtml, findMainContent } from "./cleaner.js";
+import { extractLinks } from "./links.js";
+import { htmlToMarkdown } from "./markdown.js";
 
 export interface ExtractResult {
   title: string;
@@ -32,7 +32,11 @@ const DEFAULT_OPTIONS: ExtractOptions = {
 };
 
 export class Extractor {
-  extract(html: string, url: string, options: ExtractOptions = {}): ExtractResult {
+  extract(
+    html: string,
+    url: string,
+    options: ExtractOptions = {},
+  ): ExtractResult {
     const opts = { ...DEFAULT_OPTIONS, ...options };
     const $ = cheerio.load(html);
 
@@ -42,6 +46,10 @@ export class Extractor {
     const author = this.extractAuthor($);
     const publishedDate = this.extractDate($);
     const links = opts.includeLinks ? extractLinks($, url) : [];
+
+    // Preserve code blocks BEFORE cleaning
+    // This prevents Readability from mangling syntax-highlighted code
+    this.preserveCodeBlocks($);
 
     // Clean HTML
     cleanHtml($);
@@ -56,7 +64,11 @@ export class Extractor {
       });
       const article = reader.parse();
 
-      if (article?.content && article.textContent && article.textContent.length > 100) {
+      if (
+        article?.content &&
+        article.textContent &&
+        article.textContent.length > 100
+      ) {
         // Use node-html-markdown (faster than Turndown)
         markdown = htmlToMarkdown(article.content);
 
@@ -71,7 +83,7 @@ export class Extractor {
           markdown = htmlToMarkdown(mainContent);
         } else {
           // Last resort: convert body
-          markdown = htmlToMarkdown($('body').html() || cleanedHtml);
+          markdown = htmlToMarkdown($("body").html() || cleanedHtml);
         }
       }
     } catch {
@@ -81,7 +93,8 @@ export class Extractor {
 
     // Truncate if too long
     if (opts.maxContentLength && markdown.length > opts.maxContentLength) {
-      markdown = markdown.slice(0, opts.maxContentLength) + '\n\n[Content truncated...]';
+      markdown =
+        markdown.slice(0, opts.maxContentLength) + "\n\n[Content truncated...]";
     }
 
     const wordCount = markdown.split(/\s+/).filter(Boolean).length;
@@ -94,16 +107,53 @@ export class Extractor {
       publishedDate,
       links,
       wordCount,
-      byteSize: Buffer.byteLength(markdown, 'utf8'),
+      byteSize: Buffer.byteLength(markdown, "utf8"),
     };
+  }
+
+  /**
+   * Preserve code blocks by extracting and simplifying them
+   * This prevents syntax highlighting spans from being mangled by Readability
+   */
+  private preserveCodeBlocks($: cheerio.CheerioAPI): void {
+    $("pre").each((_, elem) => {
+      const $pre = $(elem);
+
+      // Get the actual code text content (this preserves newlines from HTML)
+      const codeText = $pre.text();
+
+      // Detect language from various common attributes
+      const lang =
+        $pre.attr("data-lang") ||
+        $pre.attr("data-language") ||
+        $pre.attr("data-md-lang") ||
+        $pre
+          .find("code")
+          .attr("class")
+          ?.match(/language-(\w+)/)?.[1] ||
+        $pre.find("code").attr("data-lang") ||
+        "";
+
+      // Create a clean, simple structure: <pre><code class="language-X">text</code></pre>
+      const $code = $("<code></code>").text(codeText);
+      if (lang) {
+        $code.attr("class", `language-${lang}`);
+      }
+
+      $pre.empty().append($code);
+
+      // Remove any extra attributes that might confuse processors
+      $pre.removeAttr("style");
+      $pre.removeAttr("data-highlighted");
+    });
   }
 
   private extractTitle($: cheerio.CheerioAPI, url: string): string {
     const sources = [
-      $('meta[property="og:title"]').attr('content'),
-      $('meta[name="twitter:title"]').attr('content'),
-      $('title').text(),
-      $('h1').first().text(),
+      $('meta[property="og:title"]').attr("content"),
+      $('meta[name="twitter:title"]').attr("content"),
+      $("title").text(),
+      $("h1").first().text(),
     ];
 
     for (const source of sources) {
@@ -119,13 +169,13 @@ export class Extractor {
     // Fallback to URL path
     try {
       const pathname = new URL(url).pathname;
-      if (pathname && pathname !== '/') {
+      if (pathname && pathname !== "/") {
         return pathname
-          .replace(/\/$/, '')
-          .split('/')
+          .replace(/\/$/, "")
+          .split("/")
           .pop()!
-          .replace(/[-_]/g, ' ')
-          .replace(/\.\w+$/, '');
+          .replace(/[-_]/g, " ")
+          .replace(/\.\w+$/, "");
       }
     } catch {}
 
@@ -134,9 +184,9 @@ export class Extractor {
 
   private extractDescription($: cheerio.CheerioAPI): string {
     const sources = [
-      $('meta[property="og:description"]').attr('content'),
-      $('meta[name="description"]').attr('content'),
-      $('meta[name="twitter:description"]').attr('content'),
+      $('meta[property="og:description"]').attr("content"),
+      $('meta[name="description"]').attr("content"),
+      $('meta[name="twitter:description"]').attr("content"),
     ];
 
     for (const source of sources) {
@@ -145,16 +195,16 @@ export class Extractor {
       }
     }
 
-    return '';
+    return "";
   }
 
   private extractAuthor($: cheerio.CheerioAPI): string | null {
     const sources = [
-      $('meta[name="author"]').attr('content'),
-      $('meta[property="article:author"]').attr('content'),
+      $('meta[name="author"]').attr("content"),
+      $('meta[property="article:author"]').attr("content"),
       $('[rel="author"]').first().text(),
       $('[itemprop="author"]').first().text(),
-      $('.author').first().text(),
+      $(".author").first().text(),
       $('[class*="author-name"]').first().text(),
     ];
 
@@ -169,12 +219,12 @@ export class Extractor {
 
   private extractDate($: cheerio.CheerioAPI): string | null {
     const sources = [
-      $('meta[property="article:published_time"]').attr('content'),
-      $('meta[name="date"]').attr('content'),
-      $('meta[name="publish-date"]').attr('content'),
-      $('time[datetime]').attr('datetime'),
-      $('[itemprop="datePublished"]').attr('content'),
-      $('[itemprop="datePublished"]').attr('datetime'),
+      $('meta[property="article:published_time"]').attr("content"),
+      $('meta[name="date"]').attr("content"),
+      $('meta[name="publish-date"]').attr("content"),
+      $("time[datetime]").attr("datetime"),
+      $('[itemprop="datePublished"]').attr("content"),
+      $('[itemprop="datePublished"]').attr("datetime"),
     ];
 
     for (const source of sources) {
@@ -192,6 +242,10 @@ export class Extractor {
   }
 }
 
-export { cleanHtml, findMainContent } from './cleaner.js';
-export { extractLinks, extractInternalLinks, extractLinksWithMeta } from './links.js';
-export { htmlToMarkdown, markdownToPlainText } from './markdown.js';
+export { cleanHtml, findMainContent } from "./cleaner.js";
+export {
+  extractInternalLinks,
+  extractLinks,
+  extractLinksWithMeta,
+} from "./links.js";
+export { htmlToMarkdown, markdownToPlainText } from "./markdown.js";
