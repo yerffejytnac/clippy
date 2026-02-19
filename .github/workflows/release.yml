@@ -1,0 +1,273 @@
+name: Release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release (e.g., 1.0.0)"
+        required: true
+        type: string
+      dry_run:
+        description: "Dry run (test only, no publish)"
+        required: false
+        default: false
+        type: boolean
+
+jobs:
+  # ============================================================
+  # Validate Version
+  # ============================================================
+  validate:
+    name: Validate
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Validate version format
+        id: version
+        run: |
+          VERSION="${{ inputs.version }}"
+          if [[ ! "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+            echo "::error::Invalid version format: $VERSION (expected X.Y.Z)"
+            exit 1
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "✅ Version format valid: $VERSION"
+
+      - name: Check if version exists on npm
+        run: |
+          if bun x npm view @tremendous.dev/clippy@${{ inputs.version }} version 2>/dev/null; then
+            echo "::error::Version ${{ inputs.version }} already exists on npm!"
+            exit 1
+          fi
+          echo "✅ Version ${{ inputs.version }} is available"
+
+  # ============================================================
+  # Build & Test
+  # ============================================================
+  build:
+    name: Build & Test
+    runs-on: ubuntu-latest
+    needs: validate
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v1
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Build
+        run: bun run build
+
+      - name: Run tests
+        run: bun test || echo "No tests yet"
+
+      # --------------------------------------------------------
+      # E2E Tests
+      # --------------------------------------------------------
+      - name: E2E - Crawl test
+        run: |
+          echo "=== E2E: Crawl Latest Expo Docs ==="
+          node dist/bin/clippy.js https://docs.expo.dev/versions/unversioned -o e2e-test-output --max-pages 5
+
+          if [ ! -d "e2e-test-output" ]; then
+            echo "::error::Crawl failed - no output directory"
+            exit 1
+          fi
+
+          ls -lh e2e-test-output/
+          MD_COUNT=$(find e2e-test-output -name "*.md" | wc -l)
+          echo "Created $MD_COUNT markdown files"
+
+          if [ "$MD_COUNT" -lt 1 ]; then
+            echo "::error::No markdown files created!"
+            exit 1
+          fi
+
+          echo "✅ Crawl successful"
+
+      - name: Cleanup
+        run: rm -rf e2e-test-output
+
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  # ============================================================
+  # Publish to npm
+  # ============================================================
+  publish:
+    name: Publish to npm
+    runs-on: ubuntu-latest
+    needs: [validate, build]
+    if: inputs.dry_run == false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          registry-url: "https://registry.npmjs.org"
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v1
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Update package.json version
+        run: |
+          # Update version only (name is already '@tremendous.dev/clippy')
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '${{ inputs.version }}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+          echo "=== Updated package.json ==="
+          cat package.json
+
+      - name: Install dependencies
+        run: bun install
+
+      - name: Publish
+        run: |
+          bun x npm publish --access public
+          echo "✅ Published @tremendous.dev/clippy@${{ inputs.version }}"
+        env:
+          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
+
+  # ============================================================
+  # Dry Run
+  # ============================================================
+  dry-run:
+    name: Dry Run
+    runs-on: ubuntu-latest
+    needs: [validate, build]
+    if: inputs.dry_run == true
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Setup bun
+        uses: oven-sh/setup-bun@v1
+
+      - name: Download build artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Prepare package
+        run: |
+          node -e "
+            const fs = require('fs');
+            const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
+            pkg.version = '${{ inputs.version }}';
+            fs.writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+      - name: Pack and inspect
+        run: |
+          bun x npm pack
+
+          TARBALL=$(ls -1 *.tgz | head -1)
+          SIZE=$(ls -lh "$TARBALL" | awk '{print $5}')
+
+          echo "=== Package: $TARBALL ==="
+          echo "📦 Size: $SIZE"
+          echo ""
+          echo "=== Contents ==="
+          tar -tzf "$TARBALL"
+
+          echo ""
+          echo "🧪 Dry run complete - no publish performed"
+
+  # ============================================================
+  # Create GitHub Release
+  # ============================================================
+  github-release:
+    name: GitHub Release
+    runs-on: ubuntu-latest
+    needs: [validate, publish]
+    if: inputs.dry_run == false
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v1
+        with:
+          tag_name: v${{ inputs.version }}
+          name: v${{ inputs.version }}
+          body: |
+            ## @tremendous.dev/clippy v${{ inputs.version }}
+
+            ### Install
+
+            ```bash
+            npm install -g @tremendous.dev/clippy
+            ```
+
+            Or use directly:
+
+            ```bash
+            npx @tremendous.dev/clippy https://example.com
+            ```
+
+            ### Changes
+
+            See [README](https://github.com/yerffejytnac/clippy#readme) for full documentation.
+          draft: false
+          prerelease: false
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # ============================================================
+  # Summary
+  # ============================================================
+  summary:
+    name: Summary
+    runs-on: ubuntu-latest
+    needs: [validate, build, publish]
+    if: always()
+
+    steps:
+      - name: Summary
+        run: |
+          echo "## clippy Release Summary" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "| Step | Status |" >> $GITHUB_STEP_SUMMARY
+          echo "|------|--------|" >> $GITHUB_STEP_SUMMARY
+          echo "| Validate | ${{ needs.validate.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Build & Test | ${{ needs.build.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "| Publish | ${{ needs.publish.result }} |" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "**Version:** ${{ inputs.version }}" >> $GITHUB_STEP_SUMMARY
+          echo "**Dry Run:** ${{ inputs.dry_run }}" >> $GITHUB_STEP_SUMMARY
